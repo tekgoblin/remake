@@ -1,19 +1,9 @@
-function os.winSdkVersion()
-	local sdk_version = nil
-	if (os.host() == "windows") then
-		local reg_arch = iif( os.is64bit(), "\\Wow6432Node\\", "\\" )
-		sdk_version = os.getWindowsRegistry("HKLM:SOFTWARE" .. reg_arch .."Microsoft\\Microsoft SDKs\\Windows\\v10.0\\ProductVersion")
-	end
-	
-	return sdk_version
-end
+--========================================================================================
+--========================================================================================
+-- PREMAKE SPECIFIC EXTENSIONS
 
 function npath(p)
-	if os.host() == "windows" then
-		return path.translate(path.normalize(p))
-	else
-		return path.translate(path.normalize(p), '/')
-	end
+	return path.translate(path.normalize(p), '/')
 end
 
 local function getFileName(url)
@@ -24,36 +14,49 @@ local function getFileExtension(url)
 	return getFileName(url):match("^.+(%..+)$")
 end
 
-function getProjectName()
-	return project().name
+function os.winSdkVersion()
+	local sdk_version = nil
+	if (os.host() == "windows") then
+		local reg_arch = iif( os.is64bit(), "\\Wow6432Node\\", "\\" )
+		sdk_version = os.getWindowsRegistry("HKLM:SOFTWARE" .. reg_arch .."Microsoft\\Microsoft SDKs\\Windows\\v10.0\\ProductVersion")
+	end
+
+	return sdk_version
 end
 
-function string:append (list)
-	if list == nil then return "" end
-	if type(list) == "string" then
-		return (self .. '/' .. list)
-	else
-		for i, name in ipairs(list) do
-			list[i] = (self .. '/' .. name)
+function path.ensure(dir)
+	local bits = Table(dir:explode("/"))
+	local c = ''
+	for _,v in ipairs(bits) do
+		if v:contains('.') then goto breakloop end
+		c = path.join(c, v)
+		if not os.isdir(c) then
+			print("Creating path: " .. c)
+			os.mkdir(c)
+			return c
 		end
-		return list
 	end
+	::breakloop::
+	return c
 end
 
-function string:prepend (list)
-	if list == nil then return "" end
-	if type(list) == "string" then
-		return (list .. '/' .. self)
-	else
-		for i, name in ipairs(list) do
-			list[i] = (list .. '/' .. self)
-		end
-		return list
-	end
+--========================================================================================
+--========================================================================================
+-- OBJECT EXTENSIONS
+
+function settype(ty, obj)
+	if obj == nil then obj={} end
+	setmetatable(obj, {__index = ty })
+	return obj
 end
 
 function Table(t)
-    return setmetatable(t, {__index = table})
+	if t == nil then
+		t = {}
+	elseif type(t) ~= 'table' then
+		t = { t }
+	end
+    return settype(table, t)
 end
 
 function Object(def)
@@ -69,24 +72,87 @@ function Object(def)
 	return obj
 end
 
-function setType(ty, obj)
-	if obj == nil then obj={} end
-	setmetatable(obj, ty)
-	return obj
+--========================================================================================
+--========================================================================================
+-- STRING EXTENSIONS
+
+function string:empty()
+	return self == nil or #self == 0 or self == ''
 end
 
-function table:length()
-	local count = 0
-	for _ in pairs(self) do 
-		count = count + 1 
+function string:append (item, delim)
+	if item == nil then return "" end
+	if delim == nil then delim = ',' end
+	if type(item) ~= "table" then
+		if type(item) == "string" and self:empty() then
+			return item
+		end
+		return (self .. delim .. item)
 	end
-	return count
+
+	local t = Table{}
+	local i,name
+	for i,name in ipairs(item) do
+		t:append(self:append(name, delim))
+	end
+	return t
+end
+
+function string:pathfold(item)
+	return self:append(item, '/')
+end
+
+--========================================================================================
+--========================================================================================
+-- TABLE EXTENSIONS
+
+function table:length()
+	if self == nil then return 0 end
+	return #self
+end
+
+function table:empty()
+	return self:length() == 0
+end
+
+function table:compact(delim)
+	local len = self:length()
+	if len == 0 then return "" end
+	if delim == nil then delim = ',' end
+	local str = self[1]
+	for i = 2, len do
+		str = str .. delim .. self[i]
+	end
+	return str
+end
+
+function table:each(fn)
+	local _,v,r
+	for _,v in pairs(self) do
+		if type(v) == 'table' then Table(v) end
+		r = fn(v,_)
+		if r == false then goto breakeach end
+	end
+	::breakeach::
+	return self
+end
+
+function table:append(item)
+	if item == nil then return end
+	if type(item) ~= 'table' then
+		if not self:contains(item) then
+			self:insert(item)
+		end
+	else
+		item = Table(item)
+		item:each(function(v,k)	self:append(v) end)
+	end
 end
 
 function table:dump (indent, level)
 	if not level then level = 0 end
 	if not indent then indent = 4 end
-	
+
 	print("{");
 	for k, v in pairs(self) do
 		formatting = string.rep(" ", indent * (level+1)) .. k .. ": "
@@ -95,7 +161,7 @@ function table:dump (indent, level)
 		elseif type(v) == "table" then
 			io.write(formatting)
 			Table(v):dump(indent, level+1)
-		elseif type(v) == 'boolean' then
+		elseif type(v) == 'boolean' or type(v) == 'function' then
 			print(formatting .. tostring(v))
 		else
 			print(formatting .. v)
@@ -104,47 +170,15 @@ function table:dump (indent, level)
 	print(string.rep(" ", indent * level) .. "}");
 end
 
-function table:filter(cb)
-    local result = Table{};
-
-	for k,v in ipairs(self) do
-		if cb(v, k, self) then
-			result:insert(v)
+function foreach(list, fn)
+	list = Table(list)
+	local l = Table{}
+	for _,v in pairs(list) do
+		if type(v) == 'table' then
+			l:append(foreach(v, fn))
+		else
+			l:append(fn(v))
 		end
 	end
-
-    return result;
-end
-
-function table:find(value)
-    for _,v in ipairs(self) do
-        if v == value then
-            return _;
-        end
-    end
-	return nil
-end
-
-function table:append(list)
-	if list == nil then return end
-	
-	if type(list) == 'string' then 
-		if self:find(list) == nil then
-			self:insert(list)
-		end
-	else
-		for _,v in pairs(list) do
-			self:append(v)
-		end	
-	end
-end
-
-function ensureTable(val)
-	if val == nil then
-		return Table{}
-	elseif type(val) == 'string' then
-		return Table { val }
-	else
-		return val
-	end	
+	return l
 end
