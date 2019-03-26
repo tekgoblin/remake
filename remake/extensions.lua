@@ -1,9 +1,13 @@
---========================================================================================
---========================================================================================
--- PREMAKE SPECIFIC EXTENSIONS
-
+---
+-- Remake: Premake proxy
+-- Copyright (c) 2018 arcturus/tekgoblin
+---
 function npath(p)
 	return path.translate(path.normalize(p), '/')
+end
+
+function normalizepath(p)
+	return npath(os.realpath(p))
 end
 
 local function getFileName(url)

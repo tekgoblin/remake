@@ -1,3 +1,7 @@
+---
+-- Remake: Premake proxy
+-- Copyright (c) 2018 arcturus/tekgoblin
+---
 local ISDEBUG = false
 include "extensions.lua"
 
@@ -17,7 +21,7 @@ function prettyPathing()
 	}
 end
 
-function debuglog(msg)
+local function debuglog(msg)
 	if ISDEBUG then
 		print(msg)
 	end
@@ -65,13 +69,13 @@ function Config:dump(indent)
 
 	print("Extra Paths    : ")
 	self.extra:each(function(v,k)
-		print("\t" .. k .. '\t: ' .. v)
+		print("\t" .. k .. '\t @ ' .. v)
 	end)
 
 	print()
 end
 
-function myTarget()
+function mytarget()
 	return path.join("%{cfg.buildcfg}", "%{cfg.architecture}", "%{cfg.buildtarget.name}")
 end
 
@@ -87,7 +91,6 @@ function retarget(list, root)
 		local T = Table{}
 		list = Table(list)
 		list:each(function(file,k)
-			--print("Target  : " .. file .. " --> " .. f)
 			T[file] = retarget(file, root)
 		end)
 		return T
@@ -101,15 +104,15 @@ function retarget(list, root)
 	return path.join(paths.dist, root)
 end
 
-function includeall(path)
-	if not os.isdir(path) then
-		premake.error("includeall path '" .. path .. "' doesn't exist or can't be found")
+function includeall(loc)
+	if not os.isdir(loc) then
+		premake.error("includeall path '" .. loc .. "' doesn't exist or can't be found")
 	end
-	local list = os.matchfiles(path:append("*/premake5.lua"))
-	local _,v
-	for _,v in pairs(list) do
+	local list = os.matchfiles(path.join(loc, "**/premake5.lua"))
+	foreach(list, function(v)
+		debuglog("Including " .. v)
 		include (v)
-	end
+	end)
 end
 
 function distcopy(list, target)
@@ -126,17 +129,15 @@ function distcopy(list, target)
 	end
 
 	if list:sub(0, 1) ~= '%' then
-		list = npath(os.realpath(list))
+		list = normalizepath(list)
 		target = path.ensure(target)
 	end
-	--print("Copy: " .. list .. " --> " .. target)
-	postbuildcommands ("{COPY} " .. list .. " " .. target)
+	postbuildcommands ("{COPY} \"" .. list .. "\" \"" .. target .. "\"")
 end
 
 function distmirror(list, target)
 	local l = retarget(list, target)
 	if type(l) ~= 'table' then
-		print(list .. " --> " .. l)
 		distcopy(l, target)
 		return
 	end
@@ -224,8 +225,6 @@ function Module:process()
 	self.merged = true
 	debuglog("------")
 	--self:dump()
-	--print("-----------------------")
-	--print("-----------------------")
 end
 
 Export = Object()
@@ -247,10 +246,6 @@ function Export:newModule(name, ismodule)
 	return self.modules[name]
 end
 
-local function normalizepath(p)
-	return npath(os.realpath(p))
-end
-
 function Export:ensureModule(name)
 	return self:getModule(name) or self:newModule(name)
 end
@@ -263,12 +258,6 @@ function Export:kmerge(name, key, list)
 	else
 		ctx:ensureKey(key):append(list)
 	end
-
-	--if key ~= 'using' and ctx.ismodule == false then
-	--	pexec(ctx)
-	--	--print("Merge Exec context: " .. ctx.name)
-	--	--ctx:dump()
-	--end
 end
 
 function Export:dump()
@@ -325,20 +314,21 @@ function using(list)
 	exports:getModule(name):process()
 end
 
---[[
 function library(name, fn)
 	if _m ~= nil then
-		print ("Library already exists '" .. name .. "'")
-	else
-		pnew(name, true)
+		premake.error("Already in library scope '" .. _m.name .. "'")
 	end
-	_m = Table { ['name'] = name }
+	local m = exports:getModule(name)
+	if m ~= nil then
+		premake.error("Library already exists '" .. name .. "'")
+	end
+		
+	_m = exports:newModule(name, true)
 	fn()
-	if _m ~= nil then
+	if _m ~= nil then		
 		if _m.name ~= name then
 			premake.error("Library error: Somehow module was reset while processing '" .. name .. "'!!!")
 		end
 		_m = nil
 	end
 end
-]]--
