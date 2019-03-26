@@ -54,6 +54,8 @@ using { "sdl2", "sdl2main", "opengl32" }
 
 This will fold all known settings for sdl2, sdl2main, and opengl32 into the current project if they exist. Otherwise it will be added to a links directive as a passthrough fallback. i.e. opengl32 is vendor provided lib, so it will be linked unless you've defined it as a project name or a library definition like shown below.
 
+The point of this is to provide a linked dependency management functionality to premake. If a project is 'using' a shared lib that includes this functionality then it's settings and linkables will be folded into the current project automatically.
+
 
 #### *public, shared*
 Scoped definition functionality that act on the current project/lib and/or are exported publicly.
