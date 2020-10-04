@@ -1,6 +1,6 @@
 ## Remake / Premake
 
-Extra functionality for premake5 projects. Atm it's not a module just an include, so it acts as a proxy to premake in featured places.
+Remake is a proxy for premake. It cleans up some extra code that could get unruly or annoying and makes dependency management of libraries a little easier / clearer. Atm it's about half a module and used as a require for now. I may get around to making it a full module when I get more time to do so.
 
 ### Features
 
@@ -25,10 +25,10 @@ This creates a paths variable that contains the current setup of the configurati
     paths.3rdparty = base/3rdparty
     paths.build = base/build
     paths.buildLib = build/%{cfg.buildcfg}/%{cfg.architecture}
-    paths.dist = base/dist    
+    paths.dist = base/dist
     paths.extra.VULKAN_SDK = "/usr/local/VulkanSDK/1.1.82.1"
     paths.extra.Qt = '/usr/shared/Qt/5.9.6'
-```	
+```
 
 While Executing:
 ```
@@ -38,7 +38,7 @@ syslibdirs (paths.buildLib)
 libdirs (paths.buildLib)
 
 Create full path to paths.dist
-```	
+```
 
 
 #### *using*
@@ -46,7 +46,7 @@ Limited dependency resolution functionality. Provide only names of projects or l
 
 **Note**: This function should be used last in a project definition. Any module specifed here should already be defined and accessible, otherwise it may only specify a *links* dependency only.
 
-    
+
 Example:
 ```
 using { "sdl2", "sdl2main", "opengl32" }
@@ -66,29 +66,81 @@ Example:
 shared.defines { "DEBUG" }      -- Defined for any project using this one, and itself
 public.defines { "SHARED_LIB" } -- Defined only for projects usning this one
 defines { "NOT_EXPORTED" } -- Defined only for this project, normal premake
-```	
+```
 
 #### *library*
-Limited functionality to define a dependency that will not be built but 'using' recognizes and merges settings for linking, defines, etc.
-Since this include is a proxy, this functionality is a little more ugly. Do not use a shared scope in these as it's not a real project.
+Functionality to define a project like scoped dependency that will not be built but specifies linkages, includes and defines that are needed for the library. The 'using' function recognizes and merges these libraries managing their dependencies. It does not specify a project. A library is just metadata that's used to manage dependencies.
+
 Example:
 ```
-library("sdl2", function()
+library "sdl2"
 	public.includedirs "include"
 	public.libdirs "libs/x86_64"
 	public.defines "SDL_SHARED"
 	public.links "sdl2"
-end)
-```	
+```
 
 #### *includeall*
 Scans a path including all 'premake5.lua' files found. This will execute a recursive path scan.
-
-#### *mytarget*
-Used for postbuildcommand and *Config*. Literally results in %{cfg.buildcfg}/%{cfg.architecture}/%{cfg.buildtarget.name}
 
 #### *distcopy*
 Proxy for *postbuildcommand* {COPY}. Combine with mytarget() to make a postbuild commdand copy of your target.
 
 #### *distmirror*
 Like distcopy but accepts mulitple paths.
+
+#### *mytarget*
+Used for postbuildcommand and *Config*. Literally results in %{cfg.buildcfg}/%{cfg.architecture}/%{cfg.buildtarget.name}
+
+
+### Extra functionality
+
+#### pkgcfg
+
+Does what is sounds like. Executes `pkg-config --cflags --libs $libname` and imports the configuration into a table that it returns. Errors if no package found.
+
+#### applypkg
+
+Applies a configuration generated from pkgcfg to the current scope. Imports includes, defines, etc.
+
+Example: ```applypkg(pkgcfg('SDL2_mixer'))```
+
+
+### Simple Example
+
+Below is a simple example for linux. It shows that the console app "example" is using "sdl2". This is processed into example being linked with everything "sdl2" is linked with as well as all of it's shared/public defines, includedirs, libdirs, etc. Triggering "os" to be pulled into "example" and linking the specified libraries "m", "rt", "pthread", "dl"...
+
+```
+require "remake"
+workspace "exampleapp"
+	configurations { "Debug", "Release" }
+	architecture "x64"
+
+    paths = Config('source', 'libs', 'build', 'dist')
+
+library "os"
+    public.links { "m", "rt", "pthread", "dl" }
+
+library "sdl2"
+    applypkg(pkgcfg('SDL2'))
+    applypkg(pkgcfg('SDL2_image'))
+    applypkg(pkgcfg('SDL2_mixer'))
+    using "os"
+
+library{} -- like filter{}, it clears the tracked library scope
+
+project "example"
+    kind "consoleapp"
+    language "c++"
+    cppdialect "c++14"
+
+    files "*.cpp"
+
+    using "sdl"
+
+    distcopy()
+    --[[
+    copy the resulting exe to dist/
+    nothing else needs to be specified as it defaults to mytarget()
+    ]]--
+```
